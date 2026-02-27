@@ -1,0 +1,158 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0f1220;
+  color: #f3f6ff;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.game-shell {
+  width: min(100vw, 980px);
+  position: relative;
+  padding: 10px;
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+canvas {
+  width: 100%;
+  border: 2px solid #3b4673;
+  border-radius: 10px;
+  background: radial-gradient(circle at center, #1b2547, #0f152f);
+}
+
+.message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 40px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.modal {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 5;
+}
+
+.panel {
+  background: #1d274f;
+  border: 2px solid #5a6fb8;
+  border-radius: 12px;
+  padding: 18px;
+  width: min(90%, 720px);
+}
+
+.panel h2 {
+  margin: 0 0 14px;
+  text-align: center;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.option {
+  border: 1px solid #8fa2ef;
+  background: #2a3970;
+  color: #fff;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.2s ease;
+}
+
+.option:hover {
+  background: #395091;
+  transform: translateY(-2px);
+}
+
+.option h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.option p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
+.joystick {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  z-index: 4;
+  touch-action: none;
+}
+
+.stick {
+  position: absolute;
+  left: 40px;
+  top: 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 860px) {
+  .hud {
+    flex-wrap: wrap;
+  }
+  .options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.restart {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, 90px);
+  z-index: 6;
+  border: 1px solid #9eb4ff;
+  background: #3a4f93;
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.restart:hover {
+  background: #4a62b2;
+}
