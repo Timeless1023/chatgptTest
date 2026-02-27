@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>5分钟生存战</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="game-shell">
+      <header class="hud">
+        <div>剩余时间：<span id="timer">05:00</span></div>
+        <div>等级：<span id="level">1</span></div>
+        <div>经验：<span id="xp">0 / 8</span></div>
+        <div>生命：<span id="hp">1</span></div>
+      </header>
+      <canvas id="gameCanvas" width="960" height="540"></canvas>
+      <div id="message" class="message hidden"></div>
+      <button id="restartBtn" class="restart hidden">开始 / 重新开始</button>
+
+      <div id="levelUpModal" class="modal hidden">
+        <div class="panel">
+          <h2>升级！选择一项强化</h2>
+          <div id="upgradeOptions" class="options"></div>
+        </div>
+      </div>
+
+      <div id="joystick" class="joystick hidden">
+        <div id="stick" class="stick"></div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
