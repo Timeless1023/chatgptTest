@@ -24,6 +24,14 @@ const player = {
   attackRange: 220,
   attackCooldown: 0.45,
   projectileSpeed: 540,
+  projectileCount: 1,
+  lightningChance: 0,
+  lightningDamage: 1,
+  lightningChains: 1,
+  fireChance: 0,
+  fireBonusDamage: 1,
+  fireExplosionRadius: 80,
+  fireExplosionDamage: 1,
 };
 
 const state = {
@@ -41,17 +49,42 @@ const state = {
 const enemies = [];
 const projectiles = [];
 const xpOrbs = [];
+const effects = [];
 
 const upgrades = [
   { name: "攻击力增强", desc: "攻击伤害 +1", apply: () => (player.attackDamage += 1) },
   {
     name: "攻速提升",
     desc: "攻击间隔 -12%",
-    apply: () => (player.attackCooldown = Math.max(0.15, player.attackCooldown * 0.88)),
+    apply: () => (player.attackCooldown = Math.max(0.13, player.attackCooldown * 0.88)),
   },
   { name: "移动加速", desc: "移动速度 +35", apply: () => (player.speed += 35) },
   { name: "射程提升", desc: "攻击距离 +40", apply: () => (player.attackRange += 40) },
   { name: "弹速提升", desc: "子弹速度 +120", apply: () => (player.projectileSpeed += 120) },
+  {
+    name: "多重弹道",
+    desc: "每次额外发射 1 发弹道（最多 +4）",
+    apply: () => (player.projectileCount = Math.min(5, player.projectileCount + 1)),
+  },
+  {
+    name: "连锁雷击",
+    desc: "攻击有额外概率触发雷电，伤害+1，弹射+1",
+    apply: () => {
+      player.lightningChance = Math.min(0.6, player.lightningChance + 0.12);
+      player.lightningDamage += 1;
+      player.lightningChains += 1;
+    },
+  },
+  {
+    name: "爆燃弹头",
+    desc: "攻击有概率附带火焰；火焰击杀会爆炸",
+    apply: () => {
+      player.fireChance = Math.min(0.65, player.fireChance + 0.14);
+      player.fireBonusDamage += 1;
+      player.fireExplosionDamage += 1;
+      player.fireExplosionRadius = Math.min(140, player.fireExplosionRadius + 8);
+    },
+  },
 ];
 
 let lastTs = performance.now();
@@ -79,18 +112,19 @@ function pickSpawnPosition() {
 
 function spawnEnemy(isBoss = false) {
   const pos = pickSpawnPosition();
-  const t = state.gameTime;
-  const scale = 1 + t / TOTAL_TIME;
-  const hp = isBoss ? Math.floor(22 * scale) : Math.floor(2 + t / 40);
+  const progress = state.gameTime / TOTAL_TIME;
+  const strength = 1 + progress * 1.4;
+  const hp = isBoss ? Math.floor((24 + progress * 20) * strength) : Math.floor((2 + progress * 7) * strength);
   enemies.push({
     x: pos.x,
     y: pos.y,
-    radius: isBoss ? 30 : 12,
+    radius: isBoss ? 32 : 12 + Math.floor(progress * 4),
     hp,
     maxHp: hp,
-    speed: isBoss ? 75 : 55 + t * 0.28,
-    xp: isBoss ? 10 : 2,
+    speed: isBoss ? 78 + progress * 12 : 58 + progress * 58,
+    xp: isBoss ? 14 : 2 + Math.floor(progress * 2),
     boss: isBoss,
+    ignited: false,
   });
 }
 
@@ -119,37 +153,144 @@ function handleInput(dt) {
   }
 }
 
-function nearestEnemyInRange() {
-  let best = null;
-  let bestDist = Infinity;
-  for (const e of enemies) {
-    const d = Math.hypot(e.x - player.x, e.y - player.y);
-    if (d <= player.attackRange && d < bestDist) {
-      bestDist = d;
-      best = e;
-    }
-  }
-  return best;
+function nearestEnemiesInRange() {
+  return enemies
+    .map((e) => ({ e, d: Math.hypot(e.x - player.x, e.y - player.y) }))
+    .filter((item) => item.d <= player.attackRange)
+    .sort((a, b) => a.d - b.d)
+    .map((item) => item.e);
+}
+
+function spawnProjectile(target, angleOffset = 0) {
+  const vx = target.x - player.x;
+  const vy = target.y - player.y;
+  const len = Math.hypot(vx, vy) || 1;
+  const baseAngle = Math.atan2(vy / len, vx / len);
+  const angle = baseAngle + angleOffset;
+  projectiles.push({
+    x: player.x,
+    y: player.y,
+    vx: Math.cos(angle) * player.projectileSpeed,
+    vy: Math.sin(angle) * player.projectileSpeed,
+    radius: 4,
+    damage: player.attackDamage,
+    life: 1.4,
+  });
 }
 
 function autoAttack(dt) {
   state.attackAccumulator += dt;
   if (state.attackAccumulator < player.attackCooldown) return;
-  const target = nearestEnemyInRange();
-  if (!target) return;
+
+  const targets = nearestEnemiesInRange();
+  if (!targets.length) return;
+
   state.attackAccumulator = 0;
-  const vx = target.x - player.x;
-  const vy = target.y - player.y;
-  const len = Math.hypot(vx, vy) || 1;
-  projectiles.push({
-    x: player.x,
-    y: player.y,
-    vx: (vx / len) * player.projectileSpeed,
-    vy: (vy / len) * player.projectileSpeed,
-    radius: 4,
-    damage: player.attackDamage,
-    life: 1.4,
-  });
+  const primary = targets[0];
+  const count = player.projectileCount;
+  if (count === 1) {
+    spawnProjectile(primary, 0);
+    return;
+  }
+
+  const spread = Math.min(0.55, 0.12 * (count - 1));
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0 : i / (count - 1);
+    const offset = -spread / 2 + t * spread;
+    const target = targets[i] || primary;
+    spawnProjectile(target, offset);
+  }
+}
+
+function dealExplosion(x, y, radius, damage) {
+  effects.push({ type: "explosion", x, y, radius, ttl: 0.25 });
+  for (let i = enemies.length - 1; i >= 0; i -= 1) {
+    const e = enemies[i];
+    if (Math.hypot(e.x - x, e.y - y) <= radius + e.radius) {
+      damageEnemy(i, damage, "explosion");
+    }
+  }
+}
+
+function nearestEnemyFromPoint(x, y, excludeSet) {
+  let bestIndex = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < enemies.length; i += 1) {
+    if (excludeSet.has(i)) continue;
+    const e = enemies[i];
+    const d = Math.hypot(e.x - x, e.y - y);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIndex = i;
+    }
+  }
+  return { index: bestIndex, dist: bestDist };
+}
+
+function triggerLightning(startIndex) {
+  if (startIndex < 0 || startIndex >= enemies.length) return;
+  let currentIndex = startIndex;
+  const hitSet = new Set([currentIndex]);
+
+  for (let hop = 0; hop < player.lightningChains; hop += 1) {
+    const source = enemies[currentIndex];
+    if (!source) break;
+    const { index: nextIndex, dist } = nearestEnemyFromPoint(source.x, source.y, hitSet);
+    if (nextIndex < 0 || dist > 170) break;
+
+    const next = enemies[nextIndex];
+    effects.push({
+      type: "lightning",
+      x1: source.x,
+      y1: source.y,
+      x2: next.x,
+      y2: next.y,
+      ttl: 0.12,
+    });
+
+    const newIndex = damageEnemy(nextIndex, player.lightningDamage, "lightning");
+    if (newIndex === -1) break;
+    currentIndex = newIndex;
+    hitSet.add(currentIndex);
+  }
+}
+
+function damageEnemy(index, damage, source = "normal") {
+  const e = enemies[index];
+  if (!e) return -1;
+
+  e.hp -= damage;
+  if (source === "fire") {
+    e.ignited = true;
+  }
+
+  if (e.hp > 0) return index;
+
+  const dead = enemies[index];
+  xpOrbs.push({ x: dead.x, y: dead.y, radius: 7, value: dead.xp });
+  enemies.splice(index, 1);
+
+  if (dead.ignited) {
+    dealExplosion(dead.x, dead.y, player.fireExplosionRadius, player.fireExplosionDamage);
+  }
+  return -1;
+}
+
+function applyOnHitEffects(enemyIndex) {
+  if (enemyIndex < 0 || enemyIndex >= enemies.length) return;
+
+  if (player.lightningChance > 0 && Math.random() < player.lightningChance) {
+    const validIndex = damageEnemy(enemyIndex, player.lightningDamage, "lightning");
+    effects.push({ type: "lightning", x1: player.x, y1: player.y, x2: enemies[enemyIndex]?.x || player.x, y2: enemies[enemyIndex]?.y || player.y, ttl: 0.1 });
+    if (validIndex !== -1) {
+      triggerLightning(validIndex);
+    }
+  }
+
+  if (enemyIndex >= 0 && enemyIndex < enemies.length && player.fireChance > 0 && Math.random() < player.fireChance) {
+    damageEnemy(enemyIndex, player.fireBonusDamage, "fire");
+    effects.push({ type: "burn", x: enemies[enemyIndex]?.x || player.x, y: enemies[enemyIndex]?.y || player.y, ttl: 0.12 });
+  }
 }
 
 function updateProjectiles(dt) {
@@ -158,20 +299,24 @@ function updateProjectiles(dt) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.life -= dt;
-    let hit = false;
+
+    let hitEnemyIndex = -1;
     for (let j = enemies.length - 1; j >= 0; j -= 1) {
       const e = enemies[j];
       if (Math.hypot(p.x - e.x, p.y - e.y) <= p.radius + e.radius) {
-        e.hp -= p.damage;
-        hit = true;
-        if (e.hp <= 0) {
-          xpOrbs.push({ x: e.x, y: e.y, radius: 7, value: e.xp });
-          enemies.splice(j, 1);
-        }
+        damageEnemy(j, p.damage, "normal");
+        hitEnemyIndex = j;
         break;
       }
     }
-    if (hit || p.life <= 0 || p.x < -20 || p.x > canvas.width + 20 || p.y < -20 || p.y > canvas.height + 20) {
+
+    if (hitEnemyIndex !== -1) {
+      applyOnHitEffects(Math.min(hitEnemyIndex, enemies.length - 1));
+      projectiles.splice(i, 1);
+      continue;
+    }
+
+    if (p.life <= 0 || p.x < -20 || p.x > canvas.width + 20 || p.y < -20 || p.y > canvas.height + 20) {
       projectiles.splice(i, 1);
     }
   }
@@ -194,6 +339,15 @@ function updateEnemies(dt) {
     if (Math.hypot(e.x - player.x, e.y - player.y) <= e.radius + player.radius) {
       die();
       return;
+    }
+  }
+}
+
+function updateEffects(dt) {
+  for (let i = effects.length - 1; i >= 0; i -= 1) {
+    effects[i].ttl -= dt;
+    if (effects[i].ttl <= 0) {
+      effects.splice(i, 1);
     }
   }
 }
@@ -269,6 +423,14 @@ function initGame() {
   player.attackRange = 220;
   player.attackCooldown = 0.45;
   player.projectileSpeed = 540;
+  player.projectileCount = 1;
+  player.lightningChance = 0;
+  player.lightningDamage = 1;
+  player.lightningChains = 1;
+  player.fireChance = 0;
+  player.fireBonusDamage = 1;
+  player.fireExplosionRadius = 80;
+  player.fireExplosionDamage = 1;
 
   state.running = true;
   state.pausedForLevelUp = false;
@@ -283,6 +445,7 @@ function initGame() {
   enemies.length = 0;
   projectiles.length = 0;
   xpOrbs.length = 0;
+  effects.length = 0;
 
   messageEl.classList.add("hidden");
   restartBtn.classList.add("hidden");
@@ -297,7 +460,7 @@ function update(dt) {
   if (state.gameTime >= TOTAL_TIME) return win();
 
   state.spawnAccumulator += dt;
-  const spawnInterval = Math.max(0.23, 0.8 - state.gameTime * 0.0015);
+  const spawnInterval = Math.max(0.2, 0.78 - state.gameTime * 0.0016);
   while (state.spawnAccumulator >= spawnInterval) {
     state.spawnAccumulator -= spawnInterval;
     spawnEnemy(false);
@@ -309,6 +472,7 @@ function update(dt) {
   updateProjectiles(dt);
   updateEnemies(dt);
   updateXpOrbs(dt);
+  updateEffects(dt);
   refreshHud();
 }
 
@@ -337,6 +501,26 @@ function drawGrid() {
   ctx.restore();
 }
 
+function drawEffects() {
+  for (const ef of effects) {
+    if (ef.type === "lightning") {
+      ctx.strokeStyle = "rgba(120,190,255,0.95)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ef.x1, ef.y1);
+      ctx.lineTo(ef.x2, ef.y2);
+      ctx.stroke();
+    } else if (ef.type === "explosion") {
+      ctx.beginPath();
+      ctx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,130,40,0.22)";
+      ctx.fill();
+    } else if (ef.type === "burn") {
+      drawEntity(ef.x, ef.y, 8, "rgba(255,95,45,0.8)");
+    }
+  }
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
@@ -344,7 +528,8 @@ function draw() {
   projectiles.forEach((p) => drawEntity(p.x, p.y, p.radius, "#ffe07e"));
 
   for (const e of enemies) {
-    drawEntity(e.x, e.y, e.radius, e.boss ? "#ff4d6d" : "#ff8f7e");
+    const color = e.boss ? "#ff4d6d" : e.ignited ? "#ff9d4d" : "#ff8f7e";
+    drawEntity(e.x, e.y, e.radius, color);
     if (e.boss) {
       const w = 50;
       ctx.fillStyle = "rgba(0,0,0,0.45)";
@@ -354,6 +539,7 @@ function draw() {
     }
   }
 
+  drawEffects();
   drawEntity(player.x, player.y, player.radius, "#7db4ff");
   ctx.beginPath();
   ctx.arc(player.x, player.y, player.attackRange, 0, Math.PI * 2);
